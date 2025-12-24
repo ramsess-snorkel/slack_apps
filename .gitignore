@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+dist/
+build/
+*.egg-info/
+
+# Virtualenv
+.venv/
+venv/
+
+# Env / secrets
+.env
+*.env
+oath.env
+
+# Output
+*.csv
+
+
+
