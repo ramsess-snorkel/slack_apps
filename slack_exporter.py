@@ -266,6 +266,38 @@ def slack_ts_to_unix_seconds(ts: Optional[str]) -> str:
         return ""
 
 
+def get_channel_creator(token: str, channel_id: str) -> Optional[str]:
+    """Get the user ID of the channel creator."""
+    try:
+        info = conversations_info(token, channel_id)
+        channel = (info or {}).get("channel") or {}
+        return channel.get("creator")
+    except Exception:
+        return None
+
+
+def get_user_role(token: str, user_id: str, channel_creator_id: Optional[str]) -> str:
+    """
+    Determine user's role:
+    - "Workspace Admin" if workspace admin/owner
+    - "Channel Creator" if they created the channel
+    - "Member" otherwise
+    """
+    try:
+        user_info = _request_json(token, "users.info", params={"user": user_id})
+        user = (user_info or {}).get("user") or {}
+        
+        if user.get("is_admin") or user.get("is_owner") or user.get("is_primary_owner"):
+            return "Workspace Admin"
+    except Exception:
+        pass
+    
+    if channel_creator_id and user_id == channel_creator_id:
+        return "Channel Creator"
+    
+    return "Member"
+
+
 def export_channel_metrics_rows(
     *,
     token: str,
@@ -280,7 +312,8 @@ def export_channel_metrics_rows(
     channel_id = clean_channel_id(channel)
 
     auth_test(token)
-    conversations_info(token, channel_id)
+    channel_info_data = conversations_info(token, channel_id)
+    channel_creator_id = get_channel_creator(token, channel_id)
 
     member_ids = get_channel_member_ids(token, channel_id)
     user_map = build_user_email_map(token)
@@ -318,12 +351,15 @@ def export_channel_metrics_rows(
         if is_bot and not include_bots:
             continue
 
+        role = get_user_role(token, uid, channel_creator_id)
+
         rows.append(
             {
                 "user_id": uid,
                 "email": email or "",
                 "display_name": display_name or "",
                 "real_name": real_name or "",
+                "role": role,
                 "message_count": str(msg_counts.get(uid, 0)),
                 "joined_at": slack_ts_to_unix_seconds(join_ts.get(uid)),
             }
@@ -340,12 +376,15 @@ def export_channel_metrics_rows(
         if is_bot and not include_bots:
             continue
 
+        role = get_user_role(token, uid, channel_creator_id)
+
         rows.append(
             {
                 "user_id": uid,
                 "email": email or "",
                 "display_name": display_name or "",
                 "real_name": real_name or "",
+                "role": role,
                 "message_count": str(msg_counts.get(uid, 0)),
                 "joined_at": slack_ts_to_unix_seconds(join_ts.get(uid)),
             }
@@ -355,7 +394,7 @@ def export_channel_metrics_rows(
 
 
 def rows_to_csv_bytes(rows: Iterable[dict]) -> bytes:
-    fieldnames = ["user_id", "email", "display_name", "real_name", "message_count", "joined_at"]
+    fieldnames = ["user_id", "email", "display_name", "real_name", "role", "message_count", "joined_at"]
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fieldnames)
     writer.writeheader()
