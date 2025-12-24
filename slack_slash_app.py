@@ -41,17 +41,33 @@ def _resolve_target_channel(command_channel_id: str, text: str) -> str:
 
 
 def main() -> None:
+    import sys
+    sys.stdout.flush()
+    sys.stderr.flush()
+    
+    print("=== Starting Slack Channel Exporter ===", flush=True)
+    
     load_dotenv(".env")
+    print("Loaded .env file (if exists)", flush=True)
 
     bot_token = os.environ.get("SLACK_BOT_TOKEN")
     app_token = os.environ.get("SLACK_APP_TOKEN")  # xapp-... for Socket Mode
 
+    print(f"SLACK_BOT_TOKEN present: {bool(bot_token)}", flush=True)
+    print(f"SLACK_APP_TOKEN present: {bool(app_token)}", flush=True)
+
     if not bot_token:
+        print("ERROR: Missing SLACK_BOT_TOKEN", flush=True)
         raise SystemExit("Missing SLACK_BOT_TOKEN (xoxb-...).")
     if not app_token:
+        print("ERROR: Missing SLACK_APP_TOKEN", flush=True)
         raise SystemExit("Missing SLACK_APP_TOKEN (xapp-...). Enable Socket Mode and set SLACK_APP_TOKEN.")
+    
+    print("Environment variables validated", flush=True)
 
+    print("Creating Slack Bolt app...", flush=True)
     app = App(token=bot_token)
+    print("Slack Bolt app created", flush=True)
 
     def _is_dm_command(command: dict) -> bool:
         # Slash commands include channel_name; for DMs it is "directmessage".
@@ -187,13 +203,24 @@ def main() -> None:
             pass  # Suppress HTTP server logs
 
     port = int(os.environ.get("PORT", "10000"))
+    print(f"Starting health check server on port {port}...", flush=True)
     http_server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     http_thread = threading.Thread(target=http_server.serve_forever, daemon=True)
     http_thread.start()
-    print(f"Health check server listening on port {port}")
+    print(f"✓ Health check server listening on port {port}", flush=True)
 
     # Start Socket Mode (this blocks)
-    SocketModeHandler(app, app_token).start()
+    print("Starting Socket Mode connection to Slack...", flush=True)
+    try:
+        handler = SocketModeHandler(app, app_token)
+        print("SocketModeHandler created, starting connection...", flush=True)
+        handler.start()
+        print("⚡️ Bolt app is running!", flush=True)
+    except Exception as e:
+        print(f"ERROR: Failed to start Socket Mode: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":
