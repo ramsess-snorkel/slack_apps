@@ -77,7 +77,7 @@ def main() -> None:
         channel_id = (command.get("channel_id") or "").strip()
         return channel_id.startswith("D")
 
-    def _is_channel_member_or_admin(client, user_id: str, channel_id: str) -> bool:
+    def _is_channel_member_or_admin(client, user_id: str, channel_id: str, logger) -> bool:
         """
         Check if user is:
         1. Workspace admin/owner, OR
@@ -88,16 +88,31 @@ def main() -> None:
             info = client.users_info(user=user_id)
             user = (info or {}).get("user") or {}
             if user.get("is_admin") or user.get("is_owner") or user.get("is_primary_owner"):
+                logger.info(f"User {user_id} is workspace admin/owner")
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to check workspace admin status: {e}")
         
-        # Then check if they're a member of the target channel
+        # Then check if they're a member of the target channel (handle pagination for large channels)
         try:
-            members_data = client.conversations_members(channel=channel_id)
-            members = (members_data or {}).get("members", [])
-            return user_id in members
-        except Exception:
+            all_members = []
+            cursor = None
+            while True:
+                params = {"channel": channel_id, "limit": 1000}
+                if cursor:
+                    params["cursor"] = cursor
+                members_data = client.conversations_members(**params)
+                batch = (members_data or {}).get("members", [])
+                all_members.extend(batch)
+                cursor = (members_data.get("response_metadata") or {}).get("next_cursor")
+                if not cursor:
+                    break
+            
+            is_member = user_id in all_members
+            logger.info(f"User {user_id} membership check for channel {channel_id}: {is_member} (checked {len(all_members)} total members)")
+            return is_member
+        except Exception as e:
+            logger.error(f"Failed to check channel membership: {e}")
             # If we can't check membership, default to False for safety
             return False
 
@@ -152,14 +167,15 @@ def main() -> None:
         
         # Safety: only workspace admins/owners OR channel members (channel managers can export their channels)
         try:
-            if not _is_channel_member_or_admin(client, command.get("user_id"), channel_id):
+            if not _is_channel_member_or_admin(client, command.get("user_id"), channel_id, logger):
                 respond(
                     "Sorry—this command is restricted to **workspace admins/owners** or **members of the target channel**.\n"
                     "Make sure you're a member of the channel you're trying to export."
                 )
                 return
-        except Exception:
-            respond("Could not verify your permissions. Please try again, or contact an admin.")
+        except Exception as e:
+            logger.exception("Error checking permissions")
+            respond(f"Could not verify your permissions: {e}. Please try again, or contact an admin.")
             return
 
         # channel_id already resolved above for permission check
