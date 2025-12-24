@@ -266,11 +266,10 @@ def slack_ts_to_unix_seconds(ts: Optional[str]) -> str:
         return ""
 
 
-def get_channel_creator(token: str, channel_id: str) -> Optional[str]:
-    """Get the user ID of the channel creator."""
+def get_channel_creator_from_info(channel_info_data: dict) -> Optional[str]:
+    """Extract the channel creator ID from conversations.info response."""
     try:
-        info = conversations_info(token, channel_id)
-        channel = (info or {}).get("channel") or {}
+        channel = (channel_info_data or {}).get("channel") or {}
         return channel.get("creator")
     except Exception:
         return None
@@ -313,7 +312,7 @@ def export_channel_metrics_rows(
 
     auth_test(token)
     channel_info_data = conversations_info(token, channel_id)
-    channel_creator_id = get_channel_creator(token, channel_id)
+    channel_creator_id = get_channel_creator_from_info(channel_info_data)
 
     member_ids = get_channel_member_ids(token, channel_id)
     user_map = build_user_email_map(token)
