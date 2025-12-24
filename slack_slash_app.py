@@ -77,10 +77,29 @@ def main() -> None:
         channel_id = (command.get("channel_id") or "").strip()
         return channel_id.startswith("D")
 
-    def _is_admin_user(client, user_id: str) -> bool:
-        info = client.users_info(user=user_id)
-        user = (info or {}).get("user") or {}
-        return bool(user.get("is_admin") or user.get("is_owner") or user.get("is_primary_owner"))
+    def _is_channel_member_or_admin(client, user_id: str, channel_id: str) -> bool:
+        """
+        Check if user is:
+        1. Workspace admin/owner, OR
+        2. A member of the target channel (channel managers/members can export their own channels)
+        """
+        # First check if they're workspace admin (always allowed)
+        try:
+            info = client.users_info(user=user_id)
+            user = (info or {}).get("user") or {}
+            if user.get("is_admin") or user.get("is_owner") or user.get("is_primary_owner"):
+                return True
+        except Exception:
+            pass
+        
+        # Then check if they're a member of the target channel
+        try:
+            members_data = client.conversations_members(channel=channel_id)
+            members = (members_data or {}).get("members", [])
+            return user_id in members
+        except Exception:
+            # If we can't check membership, default to False for safety
+            return False
 
     def _channel_name_for_filename(client, channel_id: str) -> Optional[str]:
         try:
@@ -121,24 +140,29 @@ def main() -> None:
             )
             return
 
-        # Safety: only workspace admins/owners.
+        # Get target channel first (needed for permission check)
         try:
-            if not _is_admin_user(client, command.get("user_id")):
-                respond("Sorry—this command is restricted to **workspace admins/owners**.")
-                return
-        except Exception:
-            respond("Could not verify your admin status. Please try again, or contact an admin.")
-            return
-
-        try:
-            # In DMs, require an explicit target channel argument.
             if not (command.get("text") or "").strip():
                 respond("Usage: `/export-channel-metrics #some-channel`")
                 return
             channel_id = _resolve_target_channel(command.get("channel_id"), command.get("text", ""))
         except Exception:
-            respond("Could not parse channel argument. Try: `/export-channel-metrics` or `/export-channel-metrics #channel`")
+            respond("Could not parse channel argument. Try: `/export-channel-metrics #channel`")
             return
+        
+        # Safety: only workspace admins/owners OR channel members (channel managers can export their channels)
+        try:
+            if not _is_channel_member_or_admin(client, command.get("user_id"), channel_id):
+                respond(
+                    "Sorry—this command is restricted to **workspace admins/owners** or **members of the target channel**.\n"
+                    "Make sure you're a member of the channel you're trying to export."
+                )
+                return
+        except Exception:
+            respond("Could not verify your permissions. Please try again, or contact an admin.")
+            return
+
+        # channel_id already resolved above for permission check
 
         # Let the user know we started (history scans can take a while).
         respond(f"Working on it… exporting metrics for <#{channel_id}>. This may take a bit for large channels.")
@@ -209,17 +233,25 @@ def main() -> None:
     http_thread.start()
     print(f"✓ Health check server listening on port {port}", flush=True)
 
-    # Start Socket Mode (this blocks)
+    # Start Socket Mode (this blocks forever when connected)
     print("Starting Socket Mode connection to Slack...", flush=True)
+    print(f"App token format check: starts with 'xapp-' = {app_token.startswith('xapp-')}", flush=True)
+    print(f"Bot token format check: starts with 'xoxb-' = {bot_token.startswith('xoxb-')}", flush=True)
+    
     try:
         handler = SocketModeHandler(app, app_token)
-        print("SocketModeHandler created, starting connection...", flush=True)
+        print("SocketModeHandler created, calling handler.start()...", flush=True)
+        print("(This will block forever if Socket Mode connects successfully)", flush=True)
         handler.start()
+        # This line will never be reached if Socket Mode connects (which is expected)
         print("⚡️ Bolt app is running!", flush=True)
+    except KeyboardInterrupt:
+        print("Received KeyboardInterrupt, shutting down...", flush=True)
+        raise
     except Exception as e:
         print(f"ERROR: Failed to start Socket Mode: {e}", flush=True)
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stdout)
         raise
 
 
