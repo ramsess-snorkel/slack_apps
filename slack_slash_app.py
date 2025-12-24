@@ -1,5 +1,7 @@
 import os
 import time
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional, Tuple
 
 from slack_bolt import App
@@ -173,6 +175,24 @@ def main() -> None:
 
         respond(f"Done. Uploaded `{filename}`.")
 
+    # Start a minimal HTTP server for Render's health checks (Web Service requires a port)
+    class HealthCheckHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        
+        def log_message(self, format, *args):
+            pass  # Suppress HTTP server logs
+
+    port = int(os.environ.get("PORT", "10000"))
+    http_server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    http_thread = threading.Thread(target=http_server.serve_forever, daemon=True)
+    http_thread.start()
+    print(f"Health check server listening on port {port}")
+
+    # Start Socket Mode (this blocks)
     SocketModeHandler(app, app_token).start()
 
 
