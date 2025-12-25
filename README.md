@@ -207,7 +207,7 @@ Any platform that runs a persistent Python process works. Set the same environme
 
 ### End-user instructions (what teammates do)
 
-**This command is restricted to workspace admins/owners and can only be run in a DM with the bot.**
+**This command is restricted to workspace admins/owners or channel members, and can only be run in a DM with the bot.**
 
 1) Invite the bot to their channel (private channels require permissions):
 - `/invite @snorkel_inspector`
@@ -217,6 +217,115 @@ Any platform that runs a persistent Python process works. Set the same environme
 
 3) The bot uploads a CSV back into the DM named like:
 `<channel_name>_metrics_<unix_timestamp>.csv`
+
+---
+
+## Troubleshooting Guide
+
+### Command fails with `dispatch_failed`
+
+**Most common cause:** Render deployment issue or Socket Mode disconnected.
+
+**Fix steps:**
+
+1. **Check Render deployment status:**
+   - Go to Render dashboard → your service → **Events** tab
+   - Look for the latest commit - is it "Deploy live" or still "Deploy started"?
+   - If still deploying, **wait 1-2 minutes** for it to finish
+
+2. **Check Render logs:**
+   - Render dashboard → your service → **Logs** tab
+   - Look for:
+     - `✓ Health check server listening on port XXXX` (should be there)
+     - `⚡️ Bolt app is running!` (confirms Socket Mode connected)
+     - Any red error messages
+
+3. **If Socket Mode isn't connecting:**
+   - Verify environment variables in Render → **Environment** tab:
+     - `SLACK_BOT_TOKEN` = `xoxb-...` (must be set)
+     - `SLACK_APP_TOKEN` = `xapp-...` (must be set)
+   - If missing, add them and Render will auto-redeploy
+
+4. **Force restart:**
+   - Render dashboard → your service → **Manual Deploy** → Deploy latest commit
+   - This restarts the app and reconnects Socket Mode
+
+5. **Free tier spin-down:**
+   - Render's free tier spins down after inactivity (causes 50+ second delays)
+   - First command after spin-down may fail - try again after it wakes up
+   - Consider upgrading if this becomes a problem
+
+### Command fails with permission errors
+
+**Error:** "Sorry—this command is restricted to workspace admins/owners or members of the target channel"
+
+**Fix:**
+- Make sure you're a **member** of the channel you're trying to export
+- For private channels, the bot must also be invited (`/invite @snorkel_inspector`)
+
+### Command fails with `missing_scope`
+
+**Error:** "Export failed. Error: `missing_scope`"
+
+**Fix:**
+- Slack API → your app → **OAuth & Permissions**
+- Add missing scopes (usually `groups:history` for private channels)
+- **Reinstall** the app after adding scopes
+
+### App name shows inconsistently (`email_scraper` vs `snorkel_inspector`)
+
+**Cause:** Slack caches app names in multiple places.
+
+**Fix:**
+- Slack API → your app → **Install App** → **Reinstall to Workspace**
+- Remove bot from DM and re-add it
+- Old file attachments may keep old name (can't change those)
+
+### Local script fails with SSL errors (macOS)
+
+**Error:** `SSL: CERTIFICATE_VERIFY_FAILED`
+
+**Fix:**
+```bash
+# Option 1: Run Apple's cert installer (if Python from python.org)
+# Find: /Applications/Python 3.x/Install Certificates.command
+
+# Option 2: Use certifi
+python -m pip install -U certifi
+export SSL_CERT_FILE="$(python -c 'import certifi; print(certifi.where())')"
+```
+
+### Code changes not taking effect
+
+**Check:**
+1. Did you commit and push to GitHub?
+2. Is Render showing "Deploy live" for your latest commit?
+3. Wait 1-2 minutes after deployment completes before testing
+
+**Quick deploy:**
+```bash
+git add .
+git commit -m "Your change description"
+git remote set-url origin https://ghp_YOUR_TOKEN@github.com/ramsess-snorkel/slack_apps.git
+git push
+git remote set-url origin https://github.com/ramsess-snorkel/slack_apps.git
+```
+
+### Keep-alive ping (prevents free tier spin-down)
+
+A GitHub Actions workflow pings the Render service every 10 minutes to keep it awake.
+
+**To enable:**
+1. Push the `.github/workflows/keep-alive.yml` file to your repo
+2. GitHub Actions will automatically start pinging your Render URL
+3. Check it's working: GitHub repo → **Actions** tab → you should see "Keep Render Service Alive" running every 10 minutes
+
+**To update the URL** (if you change your Render service URL):
+- Edit `.github/workflows/keep-alive.yml`
+- Change `https://slack-apps-11kp.onrender.com` to your new URL
+- Commit and push
+
+**Note:** This only works if your repo is public, or if you have GitHub Actions enabled for private repos (free for public repos).
 
 
 
