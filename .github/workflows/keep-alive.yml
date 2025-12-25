@@ -1,17 +1,21 @@
-name: Keep Render Service Alive
-
-on:
-  schedule:
-    # Run every 10 minutes to prevent Render free tier spin-down
-    - cron: '*/10 * * * *'
-  workflow_dispatch: # Allow manual trigger
-
-jobs:
-  ping:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Ping Render service
-        run: |
-          curl -f https://slack-apps-11kp.onrender.com || echo "Ping failed (service may be spinning up)"
-        continue-on-error: true
+# DISABLED: Using cron-job.org instead (allows 1-minute intervals vs GitHub's 5-minute minimum)
+# 
+# name: Keep Render Service Alive
+#
+# on:
+#   schedule:
+#     # Run every 5 minutes (GitHub Actions minimum) to prevent Render free tier spin-down
+#     - cron: '*/5 * * * *'
+#   workflow_dispatch: # Allow manual trigger
+#
+# jobs:
+#   ping:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Ping Render service
+#         run: |
+#           echo "Pinging Render service at $(date)"
+#           curl -f -m 10 https://slack-apps-11kp.onrender.com || echo "Ping failed (service may be spinning up)"
+#           echo "Ping completed at $(date)"
+#         continue-on-error: true
 

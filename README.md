@@ -313,19 +313,30 @@ git remote set-url origin https://github.com/ramsess-snorkel/slack_apps.git
 
 ### Keep-alive ping (prevents free tier spin-down)
 
-A GitHub Actions workflow pings the Render service every 10 minutes to keep it awake.
+**Recommended: Use cron-job.org** (allows 1-minute intervals, more reliable than GitHub Actions)
 
-**To enable:**
-1. Push the `.github/workflows/keep-alive.yml` file to your repo
-2. GitHub Actions will automatically start pinging your Render URL
-3. Check it's working: GitHub repo → **Actions** tab → you should see "Keep Render Service Alive" running every 10 minutes
+**Setup:**
+1. Go to [cron-job.org](https://cron-job.org) and sign up (free)
+2. Create a new cron job:
+   - **Title:** `slack_scraper_keep_alive` (or any name)
+   - **URL:** `https://slack-apps-11kp.onrender.com`
+   - **Schedule:** Every 1 minute
+   - **Method:** GET
+3. Save - it will ping your Render service every minute to keep it awake
+
+**Alternative: GitHub Actions** (5-minute minimum interval)
+- The `.github/workflows/keep-alive.yml` file is disabled (commented out)
+- If you want to use it instead, uncomment it and push (requires token with `workflow` scope)
+- Less reliable than cron-job.org for keep-alive purposes
+
+**If it's still spinning down:**
+- Check cron-job.org → is the job actually running? (look for "Last execution" timestamps)
+- Render's free tier may still spin down occasionally - consider upgrading to paid tier ($7/month) for always-on
+- Make sure the cron job is set to run every 1 minute, not longer
 
 **To update the URL** (if you change your Render service URL):
-- Edit `.github/workflows/keep-alive.yml`
-- Change `https://slack-apps-11kp.onrender.com` to your new URL
-- Commit and push
-
-**Note:** This only works if your repo is public, or if you have GitHub Actions enabled for private repos (free for public repos).
+- Edit the cron job in cron-job.org dashboard
+- Update the URL field
 
 
 
