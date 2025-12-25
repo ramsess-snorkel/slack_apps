@@ -234,8 +234,10 @@ def main() -> None:
     # Start a minimal HTTP server for Render's health checks (Web Service requires a port)
     class HealthCheckHandler(BaseHTTPRequestHandler):
         def do_GET(self):
+            # Return minimal response for keep-alive pings (cron-job.org has size limits)
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
+            self.send_header("Content-Length", "2")
             self.end_headers()
             self.wfile.write(b"OK")
         
