@@ -76,7 +76,7 @@ def main() -> None:
             return True
         channel_id = (command.get("channel_id") or "").strip()
         return channel_id.startswith("D")
-
+    
     def _is_channel_member_or_admin(client, user_id: str, channel_id: str, logger) -> bool:
         """
         Check if user is:
@@ -146,11 +146,11 @@ def main() -> None:
         """
         ack()
 
-        # Safety: only allow running this in a DM with the bot.
+        # Safety: only allow running this in a DM (any DM is fine - private conversation).
         if not _is_dm_command(command):
             respond(
-                "For safety, this command can only be run in a **DM with me**.\n"
-                "Open a DM with the app and run:\n"
+                "For safety, this command can only be run in a **DM** (private conversation).\n"
+                "Open any DM and run:\n"
                 "`/export-channel-metrics #your-channel`"
             )
             return
@@ -213,20 +213,68 @@ def main() -> None:
             filename = _filename(channel_id)
 
         # Upload as a file to the DM where the command was run (never to the target channel).
+        dm_channel_id = command.get("channel_id")
         try:
             client.files_upload_v2(
-                channel=command.get("channel_id"),
+                channel=dm_channel_id,
                 filename=filename,
                 title=filename,
                 file=csv_bytes,
                 initial_comment=f"Here are the metrics for <#{channel_id}>",
             )
         except Exception as e:
-            logger.exception("Failed to upload file")
-            respond(
-                "Export succeeded, but uploading the CSV failed.\n"
-                "- Ensure the app has `files:write` scope and is allowed to post in this channel."
-            )
+            error_msg = str(e)
+            logger.exception(f"Failed to upload file: {error_msg}")
+            
+            # Check for common error patterns
+            if "missing_scope" in error_msg.lower() or "not_authed" in error_msg.lower():
+                respond(
+                    "Export succeeded, but uploading the CSV failed.\n"
+                    f"- Error: `{error_msg}`\n"
+                    "- **The app needs to be reinstalled after adding `files:write` scope.**\n"
+                    "- Go to: OAuth & Permissions → Install to Workspace (or Reinstall to Workspace)\n"
+                    "- After reinstalling, wait a few seconds and try again."
+                )
+            elif "channel_not_found" in error_msg.lower() or "not_in_channel" in error_msg.lower():
+                # Bot isn't in this DM - try uploading to a DM between the bot and the user instead
+                try:
+                    user_id = command.get("user_id")
+                    if user_id:
+                        # Open a DM between the bot and the user who ran the command
+                        dm_response = client.conversations_open(users=[user_id])
+                        bot_dm_channel = dm_response.get("channel", {}).get("id")
+                        
+                        if bot_dm_channel:
+                            # Upload to the bot-user DM instead
+                            client.files_upload_v2(
+                                channel=bot_dm_channel,
+                                filename=filename,
+                                title=filename,
+                                file=csv_bytes,
+                                initial_comment=f"Here are the metrics for <#{channel_id}>",
+                            )
+                            respond(
+                                f"Export succeeded! The CSV file was uploaded to your DM with @snorkel_inspector since I couldn't upload it to this conversation.\n"
+                                f"Check your DM with the bot to download `{filename}`."
+                            )
+                            return
+                except Exception as fallback_error:
+                    logger.exception(f"Fallback upload also failed: {fallback_error}")
+                
+                # If fallback also failed, provide instructions
+                respond(
+                    "Export succeeded, but I couldn't upload the CSV to this conversation.\n"
+                    "- The bot needs to be in the conversation to upload files.\n"
+                    "- **Solution:** Open a DM with @snorkel_inspector and run the command there, or use the fallback script:\n"
+                    "- See README.md for the `export_channel_fallback.py` script you can run locally."
+                )
+            else:
+                respond(
+                    "Export succeeded, but uploading the CSV failed.\n"
+                    f"- Error: `{error_msg}`\n"
+                    "- Ensure the app has `files:write` scope and has been **reinstalled** after adding it.\n"
+                    "- If the scope exists but upload fails, reinstall the app: OAuth & Permissions → Install to Workspace"
+                )
             return
 
         respond(f"Done. Uploaded `{filename}`.")
